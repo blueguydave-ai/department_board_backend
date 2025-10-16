@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  password     String
+  name         String
+  matricNumber String?   @unique
+  phone        String?
+  department   String   @default("Computer Science")
+  studentType  String?
+  level        Int?
+  role         String   @default("student")
+  profileImage String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  announcements Announcement[]
+  archives      Archive[]
+  results       Result[]
+
+  @@map("users")
+}
+
+model Announcement {
+  id          String   @id @default(uuid())
+  title       String
+  content     String
+  category    String
+  isFeatured  Boolean  @default(false)
+  isUrgent    Boolean  @default(false)
+  fileUrl     String?
+  authorId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  author   User    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  archives Archive[]
+
+  @@map("announcements")
+}
+
+model Timetable {
+  id        String   @id @default(uuid())
+  title     String
+  level     Int
+  semester  String
+  fileUrl   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("timetables")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  date        DateTime
+  venue       String
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+
+  @@map("events")
+}
+
+model Result {
+  id           String   @id @default(uuid())
+  studentId    String
+  courseCode   String
+  courseTitle  String
+  grade        String
+  semester     String
+  session      String
+  level        Int
+  createdAt    DateTime @default(now())
+
+  // Relations
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("results")
+}
+
+model Archive {
+  id             String       @id @default(uuid())
+  studentId      String
+  announcementId String
+  archivedAt     DateTime     @default(now())
+
+  // Relations
+  student      User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, announcementId])
+  @@map("archives")
+}
