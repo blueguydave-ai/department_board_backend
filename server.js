@@ -13,9 +13,26 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://cscdepartmentboardgroup19a.netlify.app';
 
-// ✅ FIXED CORS Configuration
+// ✅ FIXED CORS Configuration - Allows multiple frontend URLs
+const allowedOrigins = [
+  'https://68f141352a41df9fff97049d--stellular-kitsune-4475e0.netlify.app',
+  'https://cscdepartmentboardgroup19a.netlify.app',
+  'https://cscdepartmentboardgroup19.netlify.app',
+  'http://localhost:3000',
+  'http://localhost:5000'
+];
+
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
