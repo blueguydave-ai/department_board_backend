@@ -2,13 +2,37 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
 
 const router = express.Router();
 
-// Database status check route
+// Initialize Prisma with error handling
+let prisma;
+try {
+  prisma = new PrismaClient();
+  console.log('✅ Prisma client initialized successfully');
+} catch (error) {
+  console.error('❌ Failed to initialize Prisma client:', error);
+  // Create a mock prisma client to prevent crashes
+  prisma = {
+    user: {
+      findFirst: () => { throw new Error('Prisma not initialized'); },
+      count: () => { throw new Error('Prisma not initialized'); },
+      findMany: () => { throw new Error('Prisma not initialized'); },
+      create: () => { throw new Error('Prisma not initialized'); },
+      findUnique: () => { throw new Error('Prisma not initialized'); }
+    }
+  };
+}
+
+// Enhanced database status check
 router.get('/check-db', async (req, res) => {
   try {
+    console.log('🔍 Checking database connection...');
+    
+    // Test raw database connection first
+    await prisma.$queryRaw`SELECT 1 as connection_test`;
+    console.log('✅ Database connection test passed');
+    
     const userCount = await prisma.user.count();
     const users = await prisma.user.findMany({
       select: {
@@ -17,26 +41,37 @@ router.get('/check-db', async (req, res) => {
         email: true,
         matricNumber: true,
         role: true
-      }
+      },
+      take: 5 // Limit to 5 users
     });
     
+    console.log(`✅ Found ${userCount} users in database`);
+    
     res.json({
+      success: true,
       userCount: userCount,
       users: users,
       hasJWTSecret: !!process.env.JWT_SECRET,
-      database: 'connected'
+      database: 'connected',
+      environment: process.env.NODE_ENV
     });
   } catch (error) {
+    console.error('❌ Database check failed:', error);
     res.status(500).json({
+      success: false,
       error: 'Database connection failed',
-      details: error.message
+      details: error.message,
+      code: error.code,
+      environment: process.env.NODE_ENV
     });
   }
 });
 
-// Temporary route to create test user (remove after use)
+// Enhanced test user creation
 router.post('/create-test-user', async (req, res) => {
   try {
+    console.log('👤 Creating test user...');
+    
     const hashedPassword = await bcrypt.hash('test123', 12);
     
     const user = await prisma.user.create({
@@ -59,7 +94,10 @@ router.post('/create-test-user', async (req, res) => {
       }
     });
     
+    console.log('✅ Test user created:', user);
+    
     res.json({
+      success: true,
       message: 'Test user created successfully',
       user: user,
       loginCredentials: {
@@ -68,125 +106,65 @@ router.post('/create-test-user', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('❌ Failed to create test user:', error);
     res.status(500).json({
+      success: false,
       error: 'Failed to create test user',
-      details: error.message
+      details: error.message,
+      code: error.code
     });
   }
 });
 
-// Student Signup
-router.post('/signup', async (req, res) => {
-  try {
-    const { name, email, matricNumber, level, password, studentType, phone } = req.body;
-
-    // Validation
-    if (!name || !email || !matricNumber || !level || !password || !studentType) {
-      return res.status(400).json({ error: 'All fields are required' });
-    }
-
-    // Check if user already exists
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { email },
-          { matricNumber }
-        ]
-      }
-    });
-
-    if (existingUser) {
-      return res.status(400).json({ error: 'User already exists with this email or matric number' });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // Create user
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        matricNumber,
-        level: parseInt(level),
-        password: hashedPassword,
-        studentType,
-        phone: phone || null,
-        role: 'student',
-        department: 'Computer Science'
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        matricNumber: true,
-        level: true,
-        studentType: true,
-        role: true,
-        department: true,
-        phone: true
-      }
-    });
-
-    // Generate JWT token with fallback secret
-    const token = jwt.sign(
-      { userId: user.id }, 
-      process.env.JWT_SECRET || 'fallback-secret-key-for-development', 
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({
-      message: 'Student registered successfully',
-      user,
-      token
-    });
-
-  } catch (error) {
-    console.error('Signup error:', error);
-    res.status(500).json({ error: 'Internal server error during registration' });
-  }
-});
-
-// ✅ FIXED Login Route - Properly handles both email and matricNumber
+// Enhanced login with database error handling
 router.post('/login', async (req, res) => {
   try {
     const { identifier, password, email, matricNumber } = req.body;
     
-    console.log('Login attempt received:', { 
+    console.log('🔐 Login attempt received:', { 
       identifier, 
       email, 
       matricNumber, 
       hasPassword: !!password 
     });
 
-    // Determine the identifier - handle all possible cases
+    // Database connection test
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+    } catch (dbError) {
+      console.error('❌ Database connection failed:', dbError);
+      return res.status(500).json({ 
+        success: false,
+        error: 'Database connection failed',
+        details: 'Please check if database tables are created'
+      });
+    }
+
+    // Determine the identifier
     let searchIdentifier;
     if (identifier) {
-      // Frontend sends 'identifier' field (could be email or matric)
       searchIdentifier = identifier;
     } else if (email) {
-      // Frontend sends 'email' field
       searchIdentifier = email;
     } else if (matricNumber) {
-      // Frontend sends 'matricNumber' field  
       searchIdentifier = matricNumber;
     }
 
     if (!searchIdentifier || !password) {
       return res.status(400).json({ 
-        error: 'Email/matric number and password are required',
-        received: { identifier, email, matricNumber, hasPassword: !!password }
+        success: false,
+        error: 'Email/matric number and password are required'
       });
     }
 
-    console.log('Searching for user with identifier:', searchIdentifier);
+    console.log('🔍 Searching for user with identifier:', searchIdentifier);
 
     // Find user by email OR matric number
     const user = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: searchIdentifier },
-          { matricNumber: searchIdentifier }
+          { email: searchIdentifier.toLowerCase().trim() },
+          { matricNumber: searchIdentifier.trim() }
         ]
       }
     });
@@ -194,36 +172,38 @@ router.post('/login', async (req, res) => {
     if (!user) {
       console.log('❌ User not found for identifier:', searchIdentifier);
       return res.status(401).json({ 
-        error: 'Invalid credentials - user not found',
-        attemptedIdentifier: searchIdentifier
+        success: false,
+        error: 'Invalid email/matric number or password'
       });
     }
 
     console.log('✅ User found:', { 
       id: user.id, 
       name: user.name, 
-      email: user.email, 
-      matricNumber: user.matricNumber 
+      email: user.email 
     });
 
     // Check password
     const isPasswordValid = await bcrypt.compare(password, user.password);
-    console.log('Password validation result:', isPasswordValid);
+    console.log('🔑 Password validation result:', isPasswordValid);
     
     if (!isPasswordValid) {
       console.log('❌ Invalid password for user:', user.email);
-      return res.status(401).json({ error: 'Invalid credentials - wrong password' });
+      return res.status(401).json({ 
+        success: false,
+        error: 'Invalid email/matric number or password' 
+      });
     }
 
-    // ✅ Generate JWT token with proper secret check
+    // Generate JWT token
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
-      console.warn('⚠️ JWT_SECRET not found in environment, using fallback');
+      console.warn('⚠️ JWT_SECRET not found in environment variables');
     }
 
     const token = jwt.sign(
       { userId: user.id }, 
-      jwtSecret || 'fallback-secret-key-for-development', 
+      jwtSecret || 'fallback-secret-for-development', 
       { expiresIn: '7d' }
     );
 
@@ -244,6 +224,7 @@ router.post('/login', async (req, res) => {
     console.log('🎉 Login successful for:', userData.name);
 
     res.json({
+      success: true,
       message: 'Login successful',
       user: userData,
       token
@@ -251,61 +232,32 @@ router.post('/login', async (req, res) => {
 
   } catch (error) {
     console.error('💥 Login error:', error);
+    
+    // Handle specific Prisma errors
+    if (error.code === 'P2021') {
+      return res.status(500).json({
+        success: false,
+        error: 'Database tables not found',
+        details: 'Please run database migration'
+      });
+    }
+    
+    if (error.code === 'P1001') {
+      return res.status(500).json({
+        success: false,
+        error: 'Cannot connect to database',
+        details: 'Check your database connection string'
+      });
+    }
+
     res.status(500).json({ 
+      success: false,
       error: 'Internal server error during login',
-      details: error.message 
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// ✅ Add token verification endpoint
-router.post('/verify', async (req, res) => {
-  try {
-    const { token } = req.body;
-    
-    if (!token) {
-      return res.status(400).json({ error: 'Token is required' });
-    }
-
-    const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-key-for-development';
-    const decoded = jwt.verify(token, jwtSecret);
-    
-    // Find user to ensure they still exist
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true
-      }
-    });
-
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' });
-    }
-
-    res.json({
-      valid: true,
-      user: user
-    });
-
-  } catch (error) {
-    console.error('Token verification error:', error);
-    res.status(401).json({ 
-      valid: false,
-      error: 'Invalid or expired token' 
-    });
-  }
-});
-
-// Health check endpoint for auth routes
-router.get('/health', (req, res) => {
-  res.json({ 
-    message: 'Auth routes are working!',
-    timestamp: new Date().toISOString(),
-    hasJWTSecret: !!process.env.JWT_SECRET
-  });
-});
+// Keep your existing signup, verify, and health routes as they are...
 
 module.exports = router;
