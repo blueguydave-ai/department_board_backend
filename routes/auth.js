@@ -6,6 +6,75 @@ const prisma = new PrismaClient();
 
 const router = express.Router();
 
+// Database status check route
+router.get('/check-db', async (req, res) => {
+  try {
+    const userCount = await prisma.user.count();
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        matricNumber: true,
+        role: true
+      }
+    });
+    
+    res.json({
+      userCount: userCount,
+      users: users,
+      hasJWTSecret: !!process.env.JWT_SECRET,
+      database: 'connected'
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Database connection failed',
+      details: error.message
+    });
+  }
+});
+
+// Temporary route to create test user (remove after use)
+router.post('/create-test-user', async (req, res) => {
+  try {
+    const hashedPassword = await bcrypt.hash('test123', 12);
+    
+    const user = await prisma.user.create({
+      data: {
+        name: 'Test Student',
+        email: 'test@student.edu.ng',
+        matricNumber: 'CS2024999',
+        level: 200,
+        password: hashedPassword,
+        studentType: 'Undergraduate',
+        role: 'student',
+        department: 'Computer Science',
+        phone: '+2348000000000'
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        matricNumber: true
+      }
+    });
+    
+    res.json({
+      message: 'Test user created successfully',
+      user: user,
+      loginCredentials: {
+        email: 'test@student.edu.ng',
+        password: 'test123'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: 'Failed to create test user',
+      details: error.message
+    });
+  }
+});
+
 // Student Signup
 router.post('/signup', async (req, res) => {
   try {
