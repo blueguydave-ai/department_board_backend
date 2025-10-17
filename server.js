@@ -59,6 +59,27 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
+// ✅ ADDED: Debug environment route
+app.get('/api/debug-env', (req, res) => {
+  const hasDatabaseUrl = !!process.env.DATABASE_URL;
+  const databaseUrlPreview = process.env.DATABASE_URL ? 
+    process.env.DATABASE_URL.substring(0, 50) + '...' : 
+    'NOT SET';
+  
+  res.json({
+    environment: process.env.NODE_ENV,
+    hasDatabaseUrl: hasDatabaseUrl,
+    databaseUrlPreview: databaseUrlPreview,
+    databaseUrlStartsCorrectly: process.env.DATABASE_URL ? 
+      (process.env.DATABASE_URL.startsWith('postgresql://') || 
+       process.env.DATABASE_URL.startsWith('postgres://')) : 
+      false,
+    port: process.env.PORT,
+    hasJwtSecret: !!process.env.JWT_SECRET,
+    frontendUrl: process.env.FRONTEND_URL
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
