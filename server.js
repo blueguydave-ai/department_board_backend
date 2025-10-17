@@ -39,6 +39,26 @@ app.use(cors({
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Database test route
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const { PrismaClient } = require('@prisma/client');
+    const prisma = new PrismaClient();
+    
+    const userCount = await prisma.user.count();
+    res.json({ 
+      message: 'Database test',
+      userCount: userCount,
+      database: 'connected'
+    });
+  } catch (error) {
+    res.json({ 
+      message: 'Database test failed',
+      error: error.message 
+    });
+  }
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
